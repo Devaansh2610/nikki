@@ -1,8 +1,8 @@
 # Nikki
 
-Nikki is a fan-made, Obsession-inspired local voice companion. The idea is simple: you wanted your own Nikki for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
+Nikki is a fan-made, Obsession-inspired local voice "companion". The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
 
-This project turns that bit into a working localhost voice app. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local or OpenAI-compatible LLM writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
+This project turns that bit into a working localhost voice app. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a loca jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
 The personality is built around a jailbroken-style emotional persona prompt: cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice.
 
@@ -19,6 +19,8 @@ The personality is built around a jailbroken-style emotional persona prompt: cin
 - Per-turn emotion switching in the same session
 - Terminal logging of the selected emotion while `web.py` is running
 - Editable persona, emotion router, voice tags, and clip paths
+
+
 
 ## Nikki's Personality
 
@@ -57,14 +59,11 @@ Nikki answers through Fish Audio in a supportive but possessive, emotionally int
 Used when you say things like:
 
 ```text
-what are you wearing today
 do you miss me
-kiss me
 come over
-are you pretty
 ```
 
-Nikki answers through Fish Audio and makes ordinary conversation feel intimate in a disturbing way.
+Nikki answers through Fish Audio and makes ordinary conversation in a disturbing way.
 
 ### `dramatic`
 
@@ -83,6 +82,8 @@ When the dramatic clip exists, Nikki skips the LLM and Fish Audio and plays:
 nice-date.mp3
 ```
 
+
+
 ### `horrifying`
 
 Used for breakup or abandonment topics:
@@ -99,6 +100,8 @@ When the horrifying clip exists, Nikki skips the LLM and Fish Audio and plays:
 ```text
 i-feel-like-you-dont-love-me-as-much-as-i-do.mp3
 ```
+
+
 
 ## How Emotion Routing Works
 
@@ -134,6 +137,8 @@ The app classifies every new question independently, so Nikki can go from `flirt
 
 ## Model Stack
 
+
+
 ### Speech-To-Text
 
 - Package: `faster-whisper`
@@ -141,6 +146,8 @@ The app classifies every new question independently, so Nikki can go from `flirt
 - Config key: `WHISPER_MODEL`
 - Other useful values: `tiny`, `base`, `small`
 - Device config: `WHISPER_DEVICE=auto`
+
+
 
 ### LLM
 
@@ -205,6 +212,8 @@ httpx
 python-dotenv
 rich
 ```
+
+
 
 ## Setup
 
@@ -367,6 +376,8 @@ Edit environment defaults:
 app/config.py
 ```
 
+
+
 ## Project Structure
 
 ```text
@@ -386,7 +397,11 @@ requirements.txt        Python dependencies
 setup.sh                Convenience setup script
 ```
 
+
+
 ## Troubleshooting
+
+
 
 ### Fish says `401 Unauthorized`
 
@@ -401,6 +416,8 @@ Then restart:
 ```bash
 python web.py
 ```
+
+
 
 ### Browser says microphone is blocked
 
@@ -426,6 +443,8 @@ Then make sure the model exists:
 ollama list
 ollama pull sebdg/emotional_llama:test
 ```
+
+
 
 ### Direct clips do not play
 
