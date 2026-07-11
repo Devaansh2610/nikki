@@ -170,13 +170,6 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=sebdg/emotional_llama:test
 ```
 
-Optional OpenAI-compatible model:
-
-```env
-OPENAI_MODEL=gpt-4o-mini
-```
-
-If `OPENAI_API_KEY` is set, the app uses the OpenAI-compatible backend instead of Ollama.
 
 ### Voice / TTS
 
@@ -194,7 +187,7 @@ Fish Audio is used for `normal`, `supportive`, and `flirting`. It is also used a
 ## Requirements
 
 - Python 3.10, 3.11, or 3.12
-- Ollama, unless using an OpenAI-compatible backend
+- Ollama
 - Fish Audio API key
 - Chrome or Edge for microphone access in the web UI
 - macOS, Linux, or Windows
@@ -321,26 +314,6 @@ Playing direct dramatic clip instead of LLM/Fish.
 
 The first request can take longer because Whisper and the LLM connection warm up.
 
-## Run Terminal Mode
-
-```bash
-source .venv/bin/activate
-python main.py
-```
-
-Press Enter with no text to speak, or type a message and press Enter.
-
-## Optional OpenAI-Compatible Backend
-
-Add these to `.env`:
-
-```env
-OPENAI_API_KEY=your_key_here
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
-```
-
-When `OPENAI_API_KEY` exists, Nikki uses this backend instead of Ollama.
 
 ## Customization
 
