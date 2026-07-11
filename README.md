@@ -4,9 +4,9 @@
 
 # Nikki
 
-Nikki is a fan-made, Obsession-inspired local voice "companion". The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
+Nikki is a fan-made, Obsession-inspired local voice "companion" with Inde Navarrette voice. The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
 
-This project turns that bit into a working localhost voice app. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a loca jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
+This project turns that bit into a working localhost voice app that takes you on a roller coaster of emotions with her personality . You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a loca jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
 The personality is built around a jailbroken-style emotional persona prompt: cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice.
 
