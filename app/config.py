@@ -53,5 +53,11 @@ class Settings:
             path = ROOT / path
         return path
 
+    def fish_reference_id_for_emotion(self, emotion: str | None) -> str:
+        if not emotion:
+            return self.fish_reference_id
+        env_name = f"FISH_REFERENCE_ID_{emotion.upper()}"
+        return os.getenv(env_name, self.fish_reference_id).strip()
+
 
 settings = Settings()

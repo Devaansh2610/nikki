@@ -10,7 +10,8 @@ from pathlib import Path
 import soundfile as sf
 
 from app.config import settings
-from app.emotion import choose_random_emotion, style_for_voice
+from app.emotion import choose_emotion_for_text, prompt_for_emotion, style_for_voice
+from app.emotion_clip import load_direct_emotion_clip
 from app.llm import ChatLLM
 from app.persona import build_messages
 from app.stt import SpeechToText
@@ -318,10 +319,17 @@ class NikkiVoiceApp:
 
     def respond(self, user_text: str) -> dict[str, str]:
         with self.lock:
-            messages = build_messages(self.history, user_text)
-            reply = "".join(self.llm.stream_reply(messages)).strip()
-            emotion = choose_random_emotion()
-            audio, sr = self.tts.synthesize(style_for_voice(reply, emotion), emotion=emotion)
+            emotion = choose_emotion_for_text(user_text)
+            print(f"Selected emotion: {emotion}")
+            direct_clip = load_direct_emotion_clip(emotion)
+            if direct_clip:
+                print(f"Playing direct {emotion} clip instead of LLM/Fish.")
+                audio, sr = direct_clip
+                reply = f"[{emotion} clip]"
+            else:
+                messages = build_messages(self.history, user_text, prompt_for_emotion(emotion))
+                reply = "".join(self.llm.stream_reply(messages)).strip()
+                audio, sr = self.tts.synthesize(style_for_voice(reply, emotion), emotion=emotion)
 
             wav = io.BytesIO()
             sf.write(wav, audio, sr, format="WAV")

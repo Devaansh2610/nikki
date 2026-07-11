@@ -3,7 +3,8 @@ from rich.panel import Panel
 
 from app.audio import AudioPlayer, record_until_silence
 from app.config import settings
-from app.emotion import choose_random_emotion, style_for_voice
+from app.emotion import choose_emotion_for_text, prompt_for_emotion, style_for_voice
+from app.emotion_clip import load_direct_emotion_clip
 from app.llm import ChatLLM
 from app.persona import build_messages
 
@@ -75,11 +76,22 @@ class NikkiChat:
         return text
 
     def _respond(self, user_text: str) -> None:
-        messages = build_messages(self.history, user_text)
+        emotion = choose_emotion_for_text(user_text)
         name = settings.companion_name
-        emotion = choose_random_emotion()
 
-        console.print(f"[bold magenta]{name}[/]: ", end="")
+        console.print(f"[bold magenta]{name}[/] [dim]({emotion})[/]: ", end="")
+        direct_clip = load_direct_emotion_clip(emotion)
+        if direct_clip:
+            audio, sr = direct_clip
+            full_reply = f"[{emotion} clip]"
+            console.print(full_reply)
+            self.player.play(audio, sr)
+            self.player.wait_until_done()
+            self.history.append({"role": "user", "content": user_text})
+            self.history.append({"role": "assistant", "content": full_reply})
+            return
+
+        messages = build_messages(self.history, user_text, prompt_for_emotion(emotion))
         full_reply = ""
 
         for token in self.llm.stream_reply(messages):

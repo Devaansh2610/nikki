@@ -150,18 +150,24 @@ Edit voice/emotion behavior here:
 app/emotion.py
 ```
 
-That controls random emotional delivery such as:
+That controls intent-based emotional delivery:
 
-- `dramatic`
-- `obsessive`
-- `screaming`
-- `very_angry`
-- `horror`
-- `whisper`
-- `comfort`
-- `playful`
+- `normal` for everyday questions, answered through Fish Audio in an eerie disturbed style
+- `supportive` for bad-day or upset messages, answered through Fish Audio
+- `flirting` for intimate or appearance-related questions, answered through Fish Audio
+- `dramatic` for disturbing topics like illness, death, fear, or the movie-specific dad/cancer line
+- `horrifying` for breakup or abandonment topics
 
-Fish Audio receives emotion/style tags like `[dramatic]`, `[whisper]`, `[shouting]`, and `[horrified]`.
+The app classifies each new question independently, so the emotion can change from one turn to the next in the same session.
+
+`dramatic` and `horrifying` skip the LLM and Fish Audio when their local clips exist. Defaults:
+
+```env
+REFERENCE_VOICE_DRAMATIC=nice-date.mp3
+REFERENCE_VOICE_HORRIFYING=i-feel-like-you-dont-love-me-as-much-as-i-do.mp3
+```
+
+If a clip is missing, the app falls back to the normal LLM/Fish path using that emotion's style tags.
 
 ## Optional OpenAI-Compatible LLM
 

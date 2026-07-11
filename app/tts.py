@@ -59,7 +59,7 @@ class TextToSpeech:
         }
         payload = {
             "text": text,
-            "reference_id": settings.fish_reference_id,
+            "reference_id": settings.fish_reference_id_for_emotion(emotion),
             "format": "wav",
         }
 
