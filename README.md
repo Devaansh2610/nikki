@@ -1,3 +1,7 @@
+
+<img width="1080" height="614" alt="1" src="https://github.com/user-attachments/assets/c6817b90-e458-464b-8732-5525e2077a0b" />
+
+
 # Nikki
 
 Nikki is a fan-made, Obsession-inspired local voice "companion". The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
