@@ -18,6 +18,9 @@ from app.stt import SpeechToText
 from app.tts import TextToSpeech
 
 
+BACKGROUND_IMAGE_PATH = Path(__file__).parent / "1.jpg"
+
+
 HOST = "127.0.0.1"
 PORT = 7860
 
@@ -43,26 +46,28 @@ INDEX_HTML = """<!doctype html>
     body {
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background:
-        radial-gradient(circle at 25% 20%, rgba(232, 93, 117, 0.18), transparent 30%),
-        radial-gradient(circle at 80% 78%, rgba(73, 198, 184, 0.14), transparent 28%),
-        var(--bg);
+      position: relative;
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-image: url("/1.jpg");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 12, 0.35);
+      z-index: 0;
     }
     main {
-      width: min(520px, calc(100vw - 32px));
-      min-height: 520px;
-      display: grid;
-      align-content: center;
-      justify-items: center;
-      gap: 26px;
-      padding: 32px;
-      border: 1px solid var(--edge);
-      background: color-mix(in srgb, var(--panel) 88%, transparent);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      position: relative;
+      z-index: 1;
+      width: 100vw;
+      min-height: 100vh;
+      display: block;
     }
     h1 {
       margin: 0;
@@ -71,7 +76,12 @@ INDEX_HTML = """<!doctype html>
       letter-spacing: 0;
     }
     .voice {
-      width: 220px;
+      position: fixed;
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: 64px;
       aspect-ratio: 1;
       border-radius: 50%;
       border: 1px solid rgba(255, 255, 255, 0.16);
@@ -79,24 +89,34 @@ INDEX_HTML = """<!doctype html>
         linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02)),
         radial-gradient(circle at 50% 42%, var(--accent), #812b7b 58%, #17191f 72%);
       color: white;
-      font-size: 24px;
+      font-size: 11px;
       font-weight: 750;
       letter-spacing: 0;
       cursor: pointer;
       transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
-      box-shadow: 0 18px 52px rgba(232, 93, 117, 0.26);
+      box-shadow: 0 10px 28px rgba(232, 93, 117, 0.26);
     }
-    .voice:hover { transform: translateY(-2px); filter: brightness(1.08); }
-    .voice:disabled { cursor: wait; opacity: 0.76; transform: none; }
+    .voice:hover { transform: translateX(-50%) translateY(-2px); filter: brightness(1.08); }
+    .voice:disabled { cursor: wait; opacity: 0.76; transform: translateX(-50%); }
     .voice.listening {
       animation: pulse 1.1s ease-in-out infinite;
       box-shadow: 0 0 0 12px rgba(232, 93, 117, 0.12), 0 18px 52px rgba(232, 93, 117, 0.32);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.04); }
     }
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.04); }
     }
     .status {
+      position: fixed;
+      bottom: 130px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: min(520px, calc(100vw - 32px));
       min-height: 56px;
       display: grid;
       place-items: center;
@@ -104,18 +124,25 @@ INDEX_HTML = """<!doctype html>
       text-align: center;
       line-height: 1.45;
       font-size: 15px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
     }
     .heard {
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: min(520px, calc(100vw - 32px));
       min-height: 24px;
       color: color-mix(in srgb, var(--text) 78%, transparent);
       text-align: center;
       font-size: 14px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
     }
   </style>
 </head>
 <body>
   <main>
-    <h1>Nikki</h1>
     <button class="voice" id="speak" type="button">Speak</button>
     <div class="status" id="status">Tap Speak and talk to Nikki.</div>
     <div class="heard" id="heard"></div>
@@ -388,11 +415,18 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     def do_GET(self) -> None:
-        if self.path != "/":
-            self.send_error(404)
+        if self.path == "/":
+            body = INDEX_HTML.encode("utf-8")
+            self._write_response(200, "text/html; charset=utf-8", body)
             return
-        body = INDEX_HTML.encode("utf-8")
-        self._write_response(200, "text/html; charset=utf-8", body)
+        if self.path == "/1.jpg":
+            if BACKGROUND_IMAGE_PATH.is_file():
+                body = BACKGROUND_IMAGE_PATH.read_bytes()
+                self._write_response(200, "image/jpeg", body)
+            else:
+                self.send_error(404, "1.jpg not found next to web.py")
+            return
+        self.send_error(404)
 
     def do_POST(self) -> None:
         if self.path != "/api/respond":
