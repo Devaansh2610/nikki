@@ -4,11 +4,11 @@
 
 # Nikki
 
-Nikki is a fan-made, Obsession-inspired local voice "companion" with Inde Navarrette voice. The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
+Nikki is a fan-made, Obsession-inspired local voice "companion" that brings Inde Navarrette's voice to life . The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro." here you go .
 
-This project turns that bit into a working localhost voice app that takes you on a roller coaster of emotions with her personality . You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a loca jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
+This project turns that bit into a working localhost voice app that takes you on a roller coaster of emotions with her personality . You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
-The personality is built around a jailbroken-style emotional persona prompt: cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice.
+The personality is built to make her feel unstable just like in the movie : cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice. Because general llms have guardrails and rules that they need to follows thorugh which the real Nikki would never show , thus I have used dolphin-mistral:7b which is a jailbroken model and has very little guidlines and rules it needs to follow , it ensures that the persona feels tru to nikki .
 
 ## Features
 
@@ -158,12 +158,6 @@ The app classifies every new question independently, so Nikki can go from `flirt
 Default backend is Ollama.
 
 Recommended model:
-
-```text
-sebdg/emotional_llama:test
-```
-
-Code fallback if no `.env` is set:
 
 ```text
 dolphin-mistral:7b
