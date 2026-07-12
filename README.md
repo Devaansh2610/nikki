@@ -1,14 +1,10 @@
-
-<img width="1080" height="614" alt="1" src="https://github.com/user-attachments/assets/c6817b90-e458-464b-8732-5525e2077a0b" />
-
-
 # Nikki
 
-Nikki is a fan-made, Obsession-inspired local voice "companion" that brings Inde Navarrette's voice to life . The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro." here you go .
+Nikki is a fan-made, Obsession-inspired local voice "companion". The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
 
-This project turns that bit into a working localhost voice app that takes you on a roller coaster of emotions with her personality . You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
+This project turns that bit into a working localhost voice app. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model (Qwen3-8B-64k-Context-2X-Josiefied-Uncensored) writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
-The personality is built to make her feel unstable just like in the movie : cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice. Because general llms have guardrails and rules that they need to follows thorugh which the real Nikki would never show , thus I have used dolphin-mistral:7b which is a jailbroken model and has very little guidlines and rules it needs to follow , it ensures that the persona feels tru to nikki .
+The personality is built around a jailbroken-style emotional persona prompt: cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice.
 
 ## Features
 
@@ -160,7 +156,13 @@ Default backend is Ollama.
 Recommended model:
 
 ```text
-dolphin-mistral:7b
+sebdg/emotional_llama:test
+```
+
+Code fallback if no `.env` is set:
+
+```text
+Qwen3-8B-64k-Context-2X-Josiefied-Uncensored
 ```
 
 Config keys:
@@ -170,6 +172,13 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=sebdg/emotional_llama:test
 ```
 
+Optional OpenAI-compatible model:
+
+```env
+OPENAI_MODEL=gpt-4o-mini
+```
+
+If `OPENAI_API_KEY` is set, the app uses the OpenAI-compatible backend instead of Ollama.
 
 ### Voice / TTS
 
@@ -187,7 +196,7 @@ Fish Audio is used for `normal`, `supportive`, and `flirting`. It is also used a
 ## Requirements
 
 - Python 3.10, 3.11, or 3.12
-- Ollama
+- Ollama, unless using an OpenAI-compatible backend
 - Fish Audio API key
 - Chrome or Edge for microphone access in the web UI
 - macOS, Linux, or Windows
@@ -314,6 +323,26 @@ Playing direct dramatic clip instead of LLM/Fish.
 
 The first request can take longer because Whisper and the LLM connection warm up.
 
+## Run Terminal Mode
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
+Press Enter with no text to speak, or type a message and press Enter.
+
+## Optional OpenAI-Compatible Backend
+
+Add these to `.env`:
+
+```env
+OPENAI_API_KEY=your_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
+
+When `OPENAI_API_KEY` exists, Nikki uses this backend instead of Ollama.
 
 ## Customization
 
