@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class Settings:
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "dolphin-mistral:7b").strip()
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "hf.co/mradermacher/Qwen3-8B-64k-Context-2X-Josiefied-Uncensored-i1-GGUF:Q5_K_M").strip()
 
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
