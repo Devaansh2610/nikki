@@ -2,14 +2,23 @@
 <img width="1080" height="614" alt="1" src="https://github.com/user-attachments/assets/b97e5c66-80c8-461c-a0bf-cb36b37d2499" />
 
 
-
 # Nikki
 
-Nikki is a fan-made, Obsession-inspired local voice "companion". The idea is simple: you wanted your own Nikki , for everyone who watched the movie and said, "if you're not playing, pass the controller bro."
+Nikki is a fan-made, voice "companion" based on the movie Obsession by Currie Barker. The idea is simple: you wanted your own Nikki right , for all you pigs who watched the movie and said, "if you're not playing, pass the controller bro." here you go .
 
-This project turns that bit into a working localhost voice app. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model (Qwen3-8B-64k-Context-2X-Josiefied-Uncensored) writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
+This project turns that bit into a working localhost voice app through which she takes you on a roller coaster of emotions. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model  writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
-The personality is built around a jailbroken-style emotional persona prompt: cinematic, grim, intimate, unstable, romantic-thriller energy rather than a clean assistant voice.
+Her personality is defined in `app/persona.py` (if you want to tweak it) as deeply unstable, obsessive, and manic—just like she is in the movie. A standard LLM simply wouldn't commit to that character. Safety guardrails constantly pull it back, refusing to let her spiral the way she's supposed to. And honestly... where's the fun in that?
+
+That's why I chose **Qwen3-8B-64k-Context-2X-Josiefied-Uncensored** instead. It stays in character far more convincingly, letting Nikki be as unpredictable, unsettling, and emotionally chaotic as she was meant to be.
+
+And remember... if she threatens you, don't worry. She's just a local voice companion.
+
+...Probably.
+
+Although, if you catch someone standing in the corner of your room watching you sleep...
+
+Well... that's between you and Nikki.
 
 ## Features
 
@@ -158,14 +167,6 @@ The app classifies every new question independently, so Nikki can go from `flirt
 
 Default backend is Ollama.
 
-Recommended model:
-
-```text
-sebdg/emotional_llama:test
-```
-
-Code fallback if no `.env` is set:
-
 ```text
 Qwen3-8B-64k-Context-2X-Josiefied-Uncensored
 ```
@@ -176,14 +177,6 @@ Config keys:
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=sebdg/emotional_llama:test
 ```
-
-Optional OpenAI-compatible model:
-
-```env
-OPENAI_MODEL=gpt-4o-mini
-```
-
-If `OPENAI_API_KEY` is set, the app uses the OpenAI-compatible backend instead of Ollama.
 
 ### Voice / TTS
 
