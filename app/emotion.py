@@ -165,33 +165,38 @@ def prompt_for_emotion(emotion: str) -> str:
     )
 
 
+def pick_voice_intro(emotion: str) -> tuple[str, str]:
+    """Pick a Fish Audio style tag + spoken prefix for one emotion."""
+    config = EMOTIONS.get(emotion, EMOTIONS["normal"])
+    return random.choice(config["fish_tags"]), random.choice(config["prefixes"])
+
+
+def shape_punctuation(text: str, emotion: str) -> str:
+    """Reshape punctuation into spoken-style pauses for a given emotion."""
+    if emotion == "supportive":
+        return text.replace(". ", "... ")
+
+    if emotion == "normal":
+        text = text.replace(". ", "... ")
+        return text.replace(", ", "... ")
+
+    if emotion == "flirting":
+        text = text.replace(". ", "... ")
+        if not text.endswith(("!", "?", "...")):
+            text += "..."
+        return text
+
+    if emotion in CLIP_EMOTIONS:
+        return text.replace(". ", "... ")
+
+    return text
+
+
 def style_for_voice(text: str, emotion: str) -> str:
     """Nudge prosody with emotion tags and spoken punctuation."""
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return text
 
-    config = EMOTIONS.get(emotion, EMOTIONS["normal"])
-    prefix = random.choice(config["prefixes"])
-    tag = random.choice(config["fish_tags"])
-
-    if emotion == "supportive":
-        text = text.replace(". ", "... ")
-        return f"{tag} {prefix}{text}"
-
-    if emotion == "normal":
-        text = text.replace(". ", "... ")
-        text = text.replace(", ", "... ")
-        return f"{tag} {prefix}{text}"
-
-    if emotion == "flirting":
-        text = text.replace(". ", "... ")
-        if not text.endswith(("!", "?", "...")):
-            text += "..."
-        return f"{tag} {prefix}{text}"
-
-    if emotion in CLIP_EMOTIONS:
-        text = text.replace(". ", "... ")
-        return f"{tag} {prefix}{text}"
-
-    return f"{tag} {prefix}{text}"
+    tag, prefix = pick_voice_intro(emotion)
+    return f"{tag} {prefix}{shape_punctuation(text, emotion)}"

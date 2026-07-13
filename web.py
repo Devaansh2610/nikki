@@ -2,6 +2,19 @@
 import base64
 import io
 import json
+import re
+import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+from app.config import settings
+from app.emotion import choose_emotion_for_text, pick_voice_intro, prompt_for_emotion, shape_punctuation
+from app.emotion_clip import load_direct_emotion_clip
 import sys
 import tempfile
 import threading
@@ -19,6 +32,19 @@ from app.stt import SpeechToText
 from app.tts import TextToSpeech
 
 
+_SENTENCE_BOUNDARY = re.compile(r"[.!?]+\s+")
+
+
+def _split_ready_sentences(buffer: str) -> tuple[list[str], str]:
+    """Pull complete sentences off the front of buffer, returning (sentences, remainder)."""
+    sentences = []
+    last_end = 0
+    for match in _SENTENCE_BOUNDARY.finditer(buffer):
+        sentences.append(buffer[last_end : match.end()])
+        last_end = match.end()
+    return sentences, buffer[last_end:]
+
+
 BACKGROUND_IMAGE_PATH = Path(__file__).parent / "1.jpg"
 INDEX_HTML_PATH = Path(__file__).parent / "app" / "static" / "index.html"
 
@@ -27,6 +53,404 @@ HOST = "127.0.0.1"
 PORT = 7860
 
 
+INDEX_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nikki Voice</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101114;
+      --panel: #181a20;
+      --text: #f4f0e8;
+      --muted: #aaa39a;
+      --accent: #e85d75;
+      --accent-2: #49c6b8;
+      --edge: #2c3038;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      position: relative;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-image: url("/1.jpg");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 12, 0.35);
+      z-index: 0;
+    }
+    main {
+      position: relative;
+      z-index: 1;
+      width: 100vw;
+      min-height: 100vh;
+      display: block;
+    }
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+    .voice {
+      position: fixed;
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: 64px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02)),
+        radial-gradient(circle at 50% 42%, var(--accent), #812b7b 58%, #17191f 72%);
+      color: white;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0;
+      cursor: pointer;
+      transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
+      box-shadow: 0 10px 28px rgba(232, 93, 117, 0.26);
+    }
+    .voice:hover { transform: translateX(-50%) translateY(-2px); filter: brightness(1.08); }
+    .voice:disabled { cursor: wait; opacity: 0.76; transform: translateX(-50%); }
+    .voice.listening {
+      animation: pulse 1.1s ease-in-out infinite;
+      box-shadow: 0 0 0 12px rgba(232, 93, 117, 0.12), 0 18px 52px rgba(232, 93, 117, 0.32);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.04); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+    }
+    .status {
+      position: fixed;
+      bottom: 130px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: min(520px, calc(100vw - 32px));
+      min-height: 56px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.45;
+      font-size: 15px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    }
+    .heard {
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      width: min(520px, calc(100vw - 32px));
+      min-height: 24px;
+      color: color-mix(in srgb, var(--text) 78%, transparent);
+      text-align: center;
+      font-size: 14px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    }
+    .emotion {
+      position: fixed;
+      bottom: 172px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      min-height: 14px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    }
+    .textbar {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      display: flex;
+      gap: 8px;
+      width: min(420px, calc(100vw - 32px));
+    }
+    .textbar input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--edge);
+      background: rgba(24, 26, 32, 0.72);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .textbar input:focus { outline: 1px solid var(--accent-2); }
+    .textbar button {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .textbar button:disabled { cursor: wait; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <main>
+    <button class="voice" id="speak" type="button">Speak</button>
+    <div class="status" id="status">Tap Speak and talk to Nikki.</div>
+    <div class="heard" id="heard"></div>
+    <div class="emotion" id="emotion"></div>
+    <form class="textbar" id="textForm">
+      <input type="text" id="textInput" placeholder="Or type to Nikki..." autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </main>
+  <script>
+    const button = document.getElementById("speak");
+    const statusEl = document.getElementById("status");
+    const heardEl = document.getElementById("heard");
+    const emotionEl = document.getElementById("emotion");
+    const textForm = document.getElementById("textForm");
+    const textInput = document.getElementById("textInput");
+    const textButton = textForm.querySelector("button");
+    let audio = null;
+    let stream = null;
+    let context = null;
+    let processor = null;
+    let source = null;
+    let chunks = [];
+    let startedAt = 0;
+    let silenceStartedAt = 0;
+    let hasSpeech = false;
+
+    function updateButton(state) {
+      if (state === "recording") {
+        button.disabled = false;
+        button.textContent = "Stop";
+        button.classList.add("listening");
+      } else if (state === "busy") {
+        button.disabled = true;
+        button.textContent = "Speak";
+        button.classList.remove("listening");
+      } else { // idle
+        button.disabled = false;
+        button.textContent = "Speak";
+        button.classList.remove("listening");
+      }
+    }
+
+    function setBusy(busy) {
+      updateButton(busy ? "busy" : "idle");
+      textInput.disabled = busy;
+      textButton.disabled = busy;
+    }
+
+    function encodeWav(samples, sampleRate) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+      const write = (offset, string) => {
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+      };
+      write(0, "RIFF");
+      view.setUint32(4, 36 + samples.length * 2, true);
+      write(8, "WAVE");
+      write(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      write(36, "data");
+      view.setUint32(40, samples.length * 2, true);
+      let offset = 44;
+      for (const sample of samples) {
+        const value = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+        offset += 2;
+      }
+      return new Blob([view], { type: "audio/wav" });
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function flattenChunks(chunks) {
+      const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+      const result = new Float32Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return result;
+    }
+
+    async function playReply(data) {
+      if (data.emotion) {
+        emotionEl.textContent = data.emotion;
+      }
+      statusEl.textContent = "Nikki is speaking.";
+      if (!audio) {
+        audio = new Audio();
+      }
+      audio.pause();
+      audio.src = "data:audio/wav;base64," + data.audio;
+      audio.onended = () => {
+        statusEl.textContent = "Tap Speak and talk again.";
+        setBusy(false);
+      };
+      await audio.play();
+    }
+
+    async function sendAudio(wavBlob) {
+      setBusy(true);
+      statusEl.textContent = "Nikki is listening back... first reply can take a minute while models load.";
+      const wav = await blobToBase64(wavBlob);
+      const response = await fetch("/api/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: wav })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      heardEl.textContent = data.heard || "";
+      await playReply(data);
+    }
+
+    async function sendText(text) {
+      setBusy(true);
+      heardEl.textContent = "";
+      statusEl.textContent = "Nikki is thinking... first reply can take a minute while models load.";
+      const response = await fetch("/api/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      await playReply(data);
+    }
+
+    async function stopRecording() {
+      if (!context) return;
+      const activeContext = context;
+      context = null; // Prevent re-entry immediately
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      const samples = flattenChunks(chunks);
+      const wavBlob = encodeWav(samples, activeContext.sampleRate);
+      await activeContext.close();
+      processor = null;
+      source = null;
+      stream = null;
+      chunks = [];
+      sendAudio(wavBlob).catch((error) => {
+        statusEl.textContent = error.message || "Something went wrong.";
+        setBusy(false);
+      });
+    }
+
+    button.addEventListener("click", async () => {
+      try {
+        if (stream) {
+          await stopRecording();
+          return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("This browser context cannot access the microphone.");
+        }
+
+        // Pre-unlock the audio element within the user gesture context
+        if (!audio) {
+          audio = new Audio();
+        }
+        audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAD";
+        audio.play().catch(() => {});
+
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        updateButton("recording");
+        heardEl.textContent = "";
+        statusEl.textContent = "Listening...";
+        context = new AudioContext();
+        await context.resume();
+        source = context.createMediaStreamSource(stream);
+        processor = context.createScriptProcessor(4096, 1, 1);
+        startedAt = performance.now();
+        silenceStartedAt = 0;
+        hasSpeech = false;
+
+        processor.onaudioprocess = (event) => {
+          const input = event.inputBuffer.getChannelData(0);
+          chunks.push(new Float32Array(input));
+          const energy = Math.sqrt(input.reduce((sum, value) => sum + value * value, 0) / input.length);
+          const now = performance.now();
+
+          if (energy > 0.005) {
+            hasSpeech = true;
+            silenceStartedAt = 0;
+          } else if (hasSpeech && silenceStartedAt === 0) {
+            silenceStartedAt = now;
+          }
+
+          if ((hasSpeech && silenceStartedAt && now - silenceStartedAt > 1200) || now - startedAt > 20000) {
+            stopRecording();
+          }
+        };
+
+        source.connect(processor);
+        processor.connect(context.destination);
+      } catch (error) {
+        if (stream) stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+        setBusy(false);
+        statusEl.textContent = "Mic is blocked by this browser context. Open http://127.0.0.1:7860 directly in Chrome or Edge, not inside an IDE preview, then allow Microphone.";
+      }
+    });
+
+    textForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = textInput.value.trim();
+      if (!text) return;
+      textInput.value = "";
+      heardEl.textContent = "";
+      sendText(text).catch((error) => {
+        statusEl.textContent = error.message || "Something went wrong.";
+        setBusy(false);
+      });
+    });
+  </script>
+</body>
+</html>
+"""
 INDEX_HTML = INDEX_HTML_PATH.read_text(encoding="utf-8")
 
 
@@ -43,6 +467,15 @@ class NikkiVoiceApp:
 
     def respond(self, user_text: str) -> dict[str, str]:
         with self.lock:
+            emotion = choose_emotion_for_text(user_text)
+            print(f"Selected emotion: {emotion}")
+            direct_clip = load_direct_emotion_clip(emotion)
+            if direct_clip:
+                print(f"Playing direct {emotion} clip instead of LLM/Fish.")
+                audio, sr = direct_clip
+                reply = f"[{emotion} clip]"
+            else:
+                reply, audio, sr = self._pipelined_llm_reply(user_text, emotion)
             result = generate_reply(user_text, self.history, self.llm, self.tts)
             print(f"Selected emotion: {result.emotion}")
             if result.is_clip:
@@ -59,6 +492,52 @@ class NikkiVoiceApp:
                 "emotion": result.emotion,
                 "audio": base64.b64encode(wav.getvalue()).decode("ascii"),
             }
+
+    def _pipelined_llm_reply(self, user_text: str, emotion: str) -> tuple[str, np.ndarray, int]:
+        """Synthesize each finished sentence's audio while the LLM is still streaming
+        the rest of the reply, instead of waiting for the full reply before any TTS
+        starts. The Fish style tag + spoken prefix (normally picked once per reply by
+        style_for_voice) are attached only to the first synthesized sentence."""
+        messages = build_messages(self.history, user_text, prompt_for_emotion(emotion))
+        tag, prefix = pick_voice_intro(emotion)
+
+        buffer = ""
+        reply_parts: list[str] = []
+        futures = []
+        is_first_sentence = True
+
+        def submit(sentence: str) -> None:
+            nonlocal is_first_sentence
+            shaped = shape_punctuation(sentence, emotion)
+            if not shaped.strip():
+                return
+            spoken = f"{tag} {prefix}{shaped}" if is_first_sentence else shaped
+            is_first_sentence = False
+            futures.append(executor.submit(self.tts.synthesize, spoken, emotion))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for token in self.llm.stream_reply(messages):
+                buffer += token
+                sentences, buffer = _split_ready_sentences(buffer)
+                for sentence in sentences:
+                    reply_parts.append(sentence)
+                    submit(sentence)
+
+            if buffer.strip():
+                reply_parts.append(buffer)
+                submit(buffer)
+
+            audio_chunks = []
+            sample_rate = 44_100
+            for future in futures:
+                chunk_audio, chunk_sr = future.result()
+                sample_rate = chunk_sr
+                if len(chunk_audio) > 0:
+                    audio_chunks.append(chunk_audio)
+
+        reply = "".join(reply_parts).strip()
+        audio = np.concatenate(audio_chunks) if audio_chunks else np.array([], dtype=np.float32)
+        return reply, audio, sample_rate
 
     def respond_to_audio(self, audio_b64: str) -> dict[str, str]:
         data = base64.b64decode(audio_b64)
