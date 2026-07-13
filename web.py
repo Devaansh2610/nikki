@@ -8,6 +8,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from app.persona import build_messages
+
 
 import numpy as np
 import soundfile as sf
