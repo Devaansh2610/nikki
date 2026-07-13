@@ -2,11 +2,14 @@
 import base64
 import io
 import json
+import sys
 import tempfile
 import threading
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import httpx
 import soundfile as sf
 
 from app.config import settings
@@ -88,6 +91,9 @@ def get_app() -> NikkiVoiceApp:
         return app
 
 
+MAX_REQUEST_BYTES = 25 * 1024 * 1024  # generous cap for a ~20s WAV clip
+
+
 class Handler(BaseHTTPRequestHandler):
     def _write_response(self, status: int, content_type: str, body: bytes) -> bool:
         try:
@@ -122,6 +128,11 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length > MAX_REQUEST_BYTES:
+                body = b"Request body too large."
+                self._write_response(413, "text/plain; charset=utf-8", body)
+                return
+
             payload = json.loads(self.rfile.read(length))
             audio = str(payload.get("audio", "")).strip()
             text = str(payload.get("text", "")).strip()
@@ -135,15 +146,47 @@ class Handler(BaseHTTPRequestHandler):
             self._write_response(200, "application/json", body)
         except (BrokenPipeError, ConnectionResetError):
             print("Browser disconnected before Nikki finished responding.")
-        except Exception as exc:
+        except (ValueError, RuntimeError) as exc:
+            # Deliberately raised with a message that's safe to show the user
+            # (e.g. "No speech received.", Fish/Whisper setup errors).
+            print(f"Request failed: {exc}")
             body = str(exc).encode("utf-8")
+            self._write_response(500, "text/plain; charset=utf-8", body)
+        except Exception:
+            # Anything else is unexpected - log the real error server-side but
+            # don't echo internals (paths, stack traces) back to the client.
+            traceback.print_exc()
+            body = b"Something went wrong processing your request."
             self._write_response(500, "text/plain; charset=utf-8", body)
 
     def log_message(self, format: str, *args) -> None:
         return
 
 
+def _check_backend_ready() -> None:
+    """Fail fast at startup instead of on the first request if the LLM backend is down."""
+    if settings.use_openai:
+        return
+
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
+    try:
+        response = httpx.get(url, timeout=5.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            f"Could not reach Ollama at {settings.ollama_base_url}. "
+            f"Start it with `ollama serve` and make sure `{settings.ollama_model}` "
+            "is pulled."
+        ) from exc
+
+
 def main() -> None:
+    try:
+        _check_backend_ready()
+    except RuntimeError as exc:
+        print(f"\nStartup failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
     backend = "OpenAI" if settings.use_openai else f"Ollama ({settings.ollama_model})"
     print(f"Nikki voice web is ready with {backend}")
     print(f"Open http://{HOST}:{PORT}")
