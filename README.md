@@ -9,7 +9,7 @@
 ![Runs Locally](https://img.shields.io/badge/runs-100%25%20local-brightgreen.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
-Nikki is a fan-made, voice "companion" based on the movie Obsession by Currie Barker. The idea is simple: you wanted your own Nikki right, for all you pigs who watched the movie and said, "if you're not playing, pass the controller bro." Here you go.
+Nikki is a fan-made, voice "companion" with Inde Navarrette's voice, based on the movie Obsession by Currie Barker. The idea is simple: you wanted your own Nikki right, for all you pigs who watched the movie and said, "if you're not playing, pass the controller bro." Here you go.
 
 This project turns that bit into a working localhost voice app through which she takes you on a roller coaster of emotions. You speak into the browser, your voice is transcribed locally, Nikki chooses an emotional mode from what you said, a local jailbroken model writes the reply when needed, and Fish Audio gives her a voice. For the most intense modes, she can skip the LLM and Fish completely and play hand-picked audio clips instead.
 
