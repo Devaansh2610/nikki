@@ -2,20 +2,36 @@
 import base64
 import io
 import json
+import re
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import numpy as np
 import soundfile as sf
 
 from app.config import settings
-from app.emotion import choose_emotion_for_text, prompt_for_emotion, style_for_voice
+from app.emotion import choose_emotion_for_text, pick_voice_intro, prompt_for_emotion, shape_punctuation
 from app.emotion_clip import load_direct_emotion_clip
 from app.llm import ChatLLM
 from app.persona import build_messages
 from app.stt import SpeechToText
 from app.tts import TextToSpeech
+
+
+_SENTENCE_BOUNDARY = re.compile(r"[.!?]+\s+")
+
+
+def _split_ready_sentences(buffer: str) -> tuple[list[str], str]:
+    """Pull complete sentences off the front of buffer, returning (sentences, remainder)."""
+    sentences = []
+    last_end = 0
+    for match in _SENTENCE_BOUNDARY.finditer(buffer):
+        sentences.append(buffer[last_end : match.end()])
+        last_end = match.end()
+    return sentences, buffer[last_end:]
 
 
 BACKGROUND_IMAGE_PATH = Path(__file__).parent / "1.jpg"
@@ -139,6 +155,50 @@ INDEX_HTML = """<!doctype html>
       font-size: 14px;
       text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
     }
+    .emotion {
+      position: fixed;
+      bottom: 172px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      min-height: 14px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    }
+    .textbar {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      display: flex;
+      gap: 8px;
+      width: min(420px, calc(100vw - 32px));
+    }
+    .textbar input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--edge);
+      background: rgba(24, 26, 32, 0.72);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .textbar input:focus { outline: 1px solid var(--accent-2); }
+    .textbar button {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .textbar button:disabled { cursor: wait; opacity: 0.6; }
   </style>
 </head>
 <body>
@@ -146,11 +206,20 @@ INDEX_HTML = """<!doctype html>
     <button class="voice" id="speak" type="button">Speak</button>
     <div class="status" id="status">Tap Speak and talk to Nikki.</div>
     <div class="heard" id="heard"></div>
+    <div class="emotion" id="emotion"></div>
+    <form class="textbar" id="textForm">
+      <input type="text" id="textInput" placeholder="Or type to Nikki..." autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
   </main>
   <script>
     const button = document.getElementById("speak");
     const statusEl = document.getElementById("status");
     const heardEl = document.getElementById("heard");
+    const emotionEl = document.getElementById("emotion");
+    const textForm = document.getElementById("textForm");
+    const textInput = document.getElementById("textInput");
+    const textButton = textForm.querySelector("button");
     let audio = null;
     let stream = null;
     let context = null;
@@ -175,6 +244,12 @@ INDEX_HTML = """<!doctype html>
         button.textContent = "Speak";
         button.classList.remove("listening");
       }
+    }
+
+    function setBusy(busy) {
+      updateButton(busy ? "busy" : "idle");
+      textInput.disabled = busy;
+      textButton.disabled = busy;
     }
 
     function encodeWav(samples, sampleRate) {
@@ -225,8 +300,25 @@ INDEX_HTML = """<!doctype html>
       return result;
     }
 
+    async function playReply(data) {
+      if (data.emotion) {
+        emotionEl.textContent = data.emotion;
+      }
+      statusEl.textContent = "Nikki is speaking.";
+      if (!audio) {
+        audio = new Audio();
+      }
+      audio.pause();
+      audio.src = "data:audio/wav;base64," + data.audio;
+      audio.onended = () => {
+        statusEl.textContent = "Tap Speak and talk again.";
+        setBusy(false);
+      };
+      await audio.play();
+    }
+
     async function sendAudio(wavBlob) {
-      updateButton("busy");
+      setBusy(true);
       statusEl.textContent = "Nikki is listening back... first reply can take a minute while models load.";
       const wav = await blobToBase64(wavBlob);
       const response = await fetch("/api/respond", {
@@ -237,17 +329,21 @@ INDEX_HTML = """<!doctype html>
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       heardEl.textContent = data.heard || "";
-      statusEl.textContent = "Nikki is speaking.";
-      if (!audio) {
-        audio = new Audio();
-      }
-      audio.pause();
-      audio.src = "data:audio/wav;base64," + data.audio;
-      audio.onended = () => {
-        statusEl.textContent = "Tap Speak and talk again.";
-        updateButton("idle");
-      };
-      await audio.play();
+      await playReply(data);
+    }
+
+    async function sendText(text) {
+      setBusy(true);
+      heardEl.textContent = "";
+      statusEl.textContent = "Nikki is thinking... first reply can take a minute while models load.";
+      const response = await fetch("/api/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      await playReply(data);
     }
 
     async function stopRecording() {
@@ -266,7 +362,7 @@ INDEX_HTML = """<!doctype html>
       chunks = [];
       sendAudio(wavBlob).catch((error) => {
         statusEl.textContent = error.message || "Something went wrong.";
-        updateButton("idle");
+        setBusy(false);
       });
     }
 
@@ -323,9 +419,21 @@ INDEX_HTML = """<!doctype html>
       } catch (error) {
         if (stream) stream.getTracks().forEach((track) => track.stop());
         stream = null;
-        updateButton("idle");
+        setBusy(false);
         statusEl.textContent = "Mic is blocked by this browser context. Open http://127.0.0.1:7860 directly in Chrome or Edge, not inside an IDE preview, then allow Microphone.";
       }
+    });
+
+    textForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = textInput.value.trim();
+      if (!text) return;
+      textInput.value = "";
+      heardEl.textContent = "";
+      sendText(text).catch((error) => {
+        statusEl.textContent = error.message || "Something went wrong.";
+        setBusy(false);
+      });
     });
   </script>
 </body>
@@ -354,9 +462,7 @@ class NikkiVoiceApp:
                 audio, sr = direct_clip
                 reply = f"[{emotion} clip]"
             else:
-                messages = build_messages(self.history, user_text, prompt_for_emotion(emotion))
-                reply = "".join(self.llm.stream_reply(messages)).strip()
-                audio, sr = self.tts.synthesize(style_for_voice(reply, emotion), emotion=emotion)
+                reply, audio, sr = self._pipelined_llm_reply(user_text, emotion)
 
             wav = io.BytesIO()
             sf.write(wav, audio, sr, format="WAV")
@@ -369,6 +475,52 @@ class NikkiVoiceApp:
                 "emotion": emotion,
                 "audio": base64.b64encode(wav.getvalue()).decode("ascii"),
             }
+
+    def _pipelined_llm_reply(self, user_text: str, emotion: str) -> tuple[str, np.ndarray, int]:
+        """Synthesize each finished sentence's audio while the LLM is still streaming
+        the rest of the reply, instead of waiting for the full reply before any TTS
+        starts. The Fish style tag + spoken prefix (normally picked once per reply by
+        style_for_voice) are attached only to the first synthesized sentence."""
+        messages = build_messages(self.history, user_text, prompt_for_emotion(emotion))
+        tag, prefix = pick_voice_intro(emotion)
+
+        buffer = ""
+        reply_parts: list[str] = []
+        futures = []
+        is_first_sentence = True
+
+        def submit(sentence: str) -> None:
+            nonlocal is_first_sentence
+            shaped = shape_punctuation(sentence, emotion)
+            if not shaped.strip():
+                return
+            spoken = f"{tag} {prefix}{shaped}" if is_first_sentence else shaped
+            is_first_sentence = False
+            futures.append(executor.submit(self.tts.synthesize, spoken, emotion))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for token in self.llm.stream_reply(messages):
+                buffer += token
+                sentences, buffer = _split_ready_sentences(buffer)
+                for sentence in sentences:
+                    reply_parts.append(sentence)
+                    submit(sentence)
+
+            if buffer.strip():
+                reply_parts.append(buffer)
+                submit(buffer)
+
+            audio_chunks = []
+            sample_rate = 44_100
+            for future in futures:
+                chunk_audio, chunk_sr = future.result()
+                sample_rate = chunk_sr
+                if len(chunk_audio) > 0:
+                    audio_chunks.append(chunk_audio)
+
+        reply = "".join(reply_parts).strip()
+        audio = np.concatenate(audio_chunks) if audio_chunks else np.array([], dtype=np.float32)
+        return reply, audio, sample_rate
 
     def respond_to_audio(self, audio_b64: str) -> dict[str, str]:
         data = base64.b64decode(audio_b64)
