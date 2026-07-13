@@ -109,10 +109,43 @@ ROUTER_KEYWORDS = {
 }
 
 
+NEGATION_TOKENS = {
+    "don't",
+    "dont",
+    "not",
+    "no",
+    "never",
+    "isn't",
+    "wasn't",
+    "won't",
+    "wouldn't",
+    "can't",
+}
+NEGATION_WINDOW = 4  # how many preceding words count as negating a match
+
+_KEYWORD_PATTERNS = {
+    emotion: [re.compile(rf"\b{re.escape(keyword)}\b") for keyword in keywords]
+    for emotion, keywords in ROUTER_KEYWORDS.items()
+}
+
+
+def _is_negated(text: str, match_start: int) -> bool:
+    preceding_words = text[:match_start].split()[-NEGATION_WINDOW:]
+    return any(word.strip(".,!?") in NEGATION_TOKENS for word in preceding_words)
+
+
+def _matches_emotion(text: str, emotion: str) -> bool:
+    for pattern in _KEYWORD_PATTERNS[emotion]:
+        match = pattern.search(text)
+        if match and not _is_negated(text, match.start()):
+            return True
+    return False
+
+
 def choose_emotion_for_text(user_text: str) -> str:
     text = re.sub(r"\s+", " ", user_text.lower()).strip()
     for emotion in ("horrifying", "dramatic", "flirting", "supportive"):
-        if any(keyword in text for keyword in ROUTER_KEYWORDS[emotion]):
+        if _matches_emotion(text, emotion):
             return emotion
     return "normal"
 

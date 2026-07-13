@@ -15,8 +15,19 @@ import soundfile as sf
 from app.config import settings
 from app.emotion import choose_emotion_for_text, pick_voice_intro, prompt_for_emotion, shape_punctuation
 from app.emotion_clip import load_direct_emotion_clip
+import sys
+import tempfile
+import threading
+import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import httpx
+import soundfile as sf
+
+from app.config import settings
+from app.engine import generate_reply
 from app.llm import ChatLLM
-from app.persona import build_messages
 from app.stt import SpeechToText
 from app.tts import TextToSpeech
 
@@ -35,6 +46,7 @@ def _split_ready_sentences(buffer: str) -> tuple[list[str], str]:
 
 
 BACKGROUND_IMAGE_PATH = Path(__file__).parent / "1.jpg"
+INDEX_HTML_PATH = Path(__file__).parent / "app" / "static" / "index.html"
 
 
 HOST = "127.0.0.1"
@@ -439,6 +451,7 @@ INDEX_HTML = """<!doctype html>
 </body>
 </html>
 """
+INDEX_HTML = INDEX_HTML_PATH.read_text(encoding="utf-8")
 
 
 class NikkiVoiceApp:
@@ -463,16 +476,20 @@ class NikkiVoiceApp:
                 reply = f"[{emotion} clip]"
             else:
                 reply, audio, sr = self._pipelined_llm_reply(user_text, emotion)
+            result = generate_reply(user_text, self.history, self.llm, self.tts)
+            print(f"Selected emotion: {result.emotion}")
+            if result.is_clip:
+                print(f"Playing direct {result.emotion} clip instead of LLM/Fish.")
 
             wav = io.BytesIO()
-            sf.write(wav, audio, sr, format="WAV")
+            sf.write(wav, result.audio, result.sample_rate, format="WAV")
 
             self.history.append({"role": "user", "content": user_text})
-            self.history.append({"role": "assistant", "content": reply})
+            self.history.append({"role": "assistant", "content": result.reply})
 
             return {
-                "reply": reply,
-                "emotion": emotion,
+                "reply": result.reply,
+                "emotion": result.emotion,
                 "audio": base64.b64encode(wav.getvalue()).decode("ascii"),
             }
 
@@ -553,6 +570,9 @@ def get_app() -> NikkiVoiceApp:
         return app
 
 
+MAX_REQUEST_BYTES = 25 * 1024 * 1024  # generous cap for a ~20s WAV clip
+
+
 class Handler(BaseHTTPRequestHandler):
     def _write_response(self, status: int, content_type: str, body: bytes) -> bool:
         try:
@@ -587,6 +607,11 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length > MAX_REQUEST_BYTES:
+                body = b"Request body too large."
+                self._write_response(413, "text/plain; charset=utf-8", body)
+                return
+
             payload = json.loads(self.rfile.read(length))
             audio = str(payload.get("audio", "")).strip()
             text = str(payload.get("text", "")).strip()
@@ -600,15 +625,47 @@ class Handler(BaseHTTPRequestHandler):
             self._write_response(200, "application/json", body)
         except (BrokenPipeError, ConnectionResetError):
             print("Browser disconnected before Nikki finished responding.")
-        except Exception as exc:
+        except (ValueError, RuntimeError) as exc:
+            # Deliberately raised with a message that's safe to show the user
+            # (e.g. "No speech received.", Fish/Whisper setup errors).
+            print(f"Request failed: {exc}")
             body = str(exc).encode("utf-8")
+            self._write_response(500, "text/plain; charset=utf-8", body)
+        except Exception:
+            # Anything else is unexpected - log the real error server-side but
+            # don't echo internals (paths, stack traces) back to the client.
+            traceback.print_exc()
+            body = b"Something went wrong processing your request."
             self._write_response(500, "text/plain; charset=utf-8", body)
 
     def log_message(self, format: str, *args) -> None:
         return
 
 
+def _check_backend_ready() -> None:
+    """Fail fast at startup instead of on the first request if the LLM backend is down."""
+    if settings.use_openai:
+        return
+
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
+    try:
+        response = httpx.get(url, timeout=5.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            f"Could not reach Ollama at {settings.ollama_base_url}. "
+            f"Start it with `ollama serve` and make sure `{settings.ollama_model}` "
+            "is pulled."
+        ) from exc
+
+
 def main() -> None:
+    try:
+        _check_backend_ready()
+    except RuntimeError as exc:
+        print(f"\nStartup failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
     backend = "OpenAI" if settings.use_openai else f"Ollama ({settings.ollama_model})"
     print(f"Nikki voice web is ready with {backend}")
     print(f"Open http://{HOST}:{PORT}")
